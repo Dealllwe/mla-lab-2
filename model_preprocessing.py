@@ -1,81 +1,57 @@
-import argparse
-import logging
-import numpy as np
+import os
 import pandas as pd
-from pathlib import Path
-import joblib
+import numpy as np
+import pickle
 from sklearn.preprocessing import StandardScaler
 
 
-logging.basicConfig(
-    filename='logs/data_preprocessing.log',
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    filemode='a'
-)
+# Собираем все тренировочные данные для обучения scaler
+all_temperatures = []
+all_days = []
 
-def _train_scaler(data_dir: Path, standard_scaler_path: str) -> StandardScaler:
-    scaler = StandardScaler()
-
-    data = []
-    for file in data_dir.iterdir():
-        if not file.name.endswith('.csv'):
-            logging.info(f'Wrong file format in {data_dir} : {file.name}')
-
-        data.append(
-            pd.read_csv(file).values.reshape(-1, 1)
-        )
-    
-    np_data = np.concatenate(data)
-    scaler.fit(np_data)
-
-    joblib.dump(scaler, standard_scaler_path)
-
-    return scaler
-
-
-def _preprocess_data(data_dir: Path, scaler: StandardScaler):
-
-    if not data_dir.exists():
-        raise Exception(f'Path {data_dir} does not exist.')
-    
-    for file in data_dir.iterdir():
-        if not file.name.endswith('.csv'):
-            logging.info(f'Wrong file format in {data_dir} : {file.name}')
+# Проходим по всем файлам в папке train
+for filename in os.listdir("train"):
+    if filename.endswith(".csv"):
+        filepath = os.path.join("train", filename)
+        df = pd.read_csv(filepath)
         
-        save_dir = data_dir.parent / (data_dir.name + '_preprocessed')
-        save_dir.mkdir(parents=True, exist_ok=True)
+        # Сохраняем исходные данные для последующего использования
+        all_temperatures.extend(df['temperature'].values)
+        all_days.extend(df['day'].values)
+        
+        print(f"  Загружен {filename}: {len(df)} записей")
 
-        save_path = save_dir / file.name
+# Преобразуем в numpy массивы и изменяем форму для scaler
+X_temperatures = np.array(all_temperatures).reshape(-1, 1)
 
-        pd.DataFrame(
-            scaler.transform(
-                 pd.read_csv(file).values.reshape(-1, 1)
-            )
-        ).to_csv(
-            save_path,
-            index=False
-        )
+# Создаем и обучаем StandardScaler
+scaler = StandardScaler()
+scaler.fit(X_temperatures)
 
-        logging.info(f'Data from {file} preprocessed and saved to {save_path}')
+print(f"\nStandardScaler обучен:")
+print(f"  Среднее (mean): {scaler.mean_[0]:.2f}")
+print(f"  Стандартное отклонение (scale): {scaler.scale_[0]:.2f}")
 
+# Применяем масштабирование к каждому тренировочному файлу
+print("\nПрименение масштабирования к тренировочным данным...")
+for filename in os.listdir("train"):
+    if filename.endswith(".csv"):
+        filepath = os.path.join("train", filename)
+        df = pd.read_csv(filepath)
+        
+        # Масштабируем температуру
+        temperatures_scaled = scaler.transform(df[['temperature']])
+        
+        # Добавляем новую колонку с масштабированными значениями
+        df['temperature_scaled'] = temperatures_scaled
+        
+        # Сохраняем обратно
+        df.to_csv(filepath, index=False)
+        print(f"  Обработан {filename}")
 
+# Сохраняем scaler для использования в тестировании
+with open("scaler.pkl", "wb") as f:
+    pickle.dump(scaler, f)
 
-
-
-def preprocess(data_dir: str, standard_scaler_path: str):
-    data_dir = Path(data_dir)
-
-    scaler = _train_scaler(data_dir/'train', standard_scaler_path)
-
-    _preprocess_data(data_dir/'train', scaler)
-    _preprocess_data(data_dir/'test', scaler)
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Data preprocessing")
-    parser.add_argument("--data_dir", help="Path to train/test directories.", required=True)
-    parser.add_argument("--standard_scaler_path", help="Path to save StandardScaler.", required=True)
-    args = parser.parse_args()
-    
-    preprocess(args.data_dir, args.standard_scaler_path)
+print("\n Предобработка завершена!")
+print("  Scaler сохранен в scaler.pkl")
