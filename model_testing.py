@@ -3,6 +3,7 @@ import csv
 import json
 import logging
 import math
+import pickle
 from pathlib import Path
 
 LOG_PATH = Path("logs/model_testing.log")
@@ -18,7 +19,7 @@ logging.basicConfig(
 TARGET_COLUMN = "target_temperature"
 
 
-def _read_rows_from_path(path: Path):
+def _read_rows_from_path(path: Path) -> list[dict]:
     rows = []
     if path.is_file():
         with path.open("r", newline="", encoding="utf-8") as f:
@@ -35,15 +36,15 @@ def _read_rows_from_path(path: Path):
     return rows
 
 
-def _predict(model, row):
+def _predict(model: dict, row: dict) -> float:
     return sum(float(row[f]) * w for f, w in zip(model["feature_names"], model["weights"])) + model["bias"]
 
 
-def test(test_data_path: str, model_save_path: str):
+def test(test_data_path: str, model_save_path: str) -> dict:
     rows = _read_rows_from_path(Path(test_data_path))
 
-    with Path(model_save_path).open("r", encoding="utf-8") as f:
-        model = json.load(f)
+    with Path(model_save_path).open("rb") as f:
+        model = pickle.load(f)
 
     y_true = [float(r[TARGET_COLUMN]) for r in rows]
     y_pred = [_predict(model, r) for r in rows]
@@ -58,20 +59,16 @@ def test(test_data_path: str, model_save_path: str):
     r2 = 1.0 - (ss_res / ss_tot if ss_tot > 0 else 0.0)
 
     metrics = {"mae": mae, "rmse": rmse, "r2": r2, "n_samples": n}
-
     logging.info("Model evaluation metrics: %s", metrics)
+
     print(json.dumps(metrics, ensure_ascii=False, indent=2))
     return metrics
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Model testing")
-    parser.add_argument(
-        "--test_data_path",
-        help="Path to preprocessed test directory or csv file.",
-        required=True,
-    )
-    parser.add_argument("--model_save_path", help="Path to saved model weights", required=True)
+    parser.add_argument("--test_data_path", help="Path to preprocessed test directory or csv file.", required=True)
+    parser.add_argument("--model_save_path", help="Path to saved model weights (.joblib)", required=True)
     args = parser.parse_args()
 
     test(args.test_data_path, args.model_save_path)

@@ -27,11 +27,10 @@ def _generate_temperature_dataset(
     noise_std: float,
     anomaly_probability: float,
     anomaly_scale: float,
-):
+) -> list[dict]:
     rng = random.Random(seed)
-    rows = []
+    temperature_points = []
 
-    temperatures = []
     for day in range(n_days):
         seasonality = 8.0 * math.sin(2.0 * math.pi * day / 30.0)
         trend = trend_per_day * day
@@ -42,11 +41,12 @@ def _generate_temperature_dataset(
         if has_anomaly:
             temperature += rng.gauss(0.0, anomaly_scale)
 
-        temperatures.append((day, seasonality, trend, noise, has_anomaly, temperature))
+        temperature_points.append((day, seasonality, trend, noise, has_anomaly, temperature))
 
-    for i in range(len(temperatures) - 1):
-        day, seasonality, trend, noise, has_anomaly, temperature = temperatures[i]
-        target_temperature = temperatures[i + 1][5]
+    rows = []
+    for i in range(len(temperature_points) - 1):
+        day, seasonality, trend, noise, has_anomaly, temperature = temperature_points[i]
+        target_temperature = temperature_points[i + 1][5]
         rows.append(
             {
                 "day": day,
@@ -61,19 +61,27 @@ def _generate_temperature_dataset(
     return rows
 
 
-def _write_csv(path: Path, rows):
+def _write_csv(path: Path, rows: list[dict]) -> None:
     with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
         writer.writeheader()
         writer.writerows(rows)
 
 
-def create_data(save_dir: str):
+def _clean_old_csv(dir_path: Path) -> None:
+    for file in dir_path.glob("*.csv"):
+        file.unlink()
+
+
+def create_data(save_dir: str) -> tuple[Path, Path]:
     save_path = Path(save_dir)
     train_dir = save_path / "train"
     test_dir = save_path / "test"
     train_dir.mkdir(parents=True, exist_ok=True)
     test_dir.mkdir(parents=True, exist_ok=True)
+
+    _clean_old_csv(train_dir)
+    _clean_old_csv(test_dir)
 
     datasets_config = [
         {
@@ -112,16 +120,13 @@ def create_data(save_dir: str):
         name = cfg["name"]
         rows = _generate_temperature_dataset(**{k: v for k, v in cfg.items() if k != "name"})
         split_idx = int(len(rows) * 0.8)
-        train_rows = rows[:split_idx]
-        test_rows = rows[split_idx:]
 
-        train_file = train_dir / f"{name}.csv"
-        test_file = test_dir / f"{name}.csv"
+        _write_csv(train_dir / f"{name}.csv", rows[:split_idx])
+        _write_csv(test_dir / f"{name}.csv", rows[split_idx:])
 
-        _write_csv(train_file, train_rows)
-        _write_csv(test_file, test_rows)
+        logging.info("Created dataset %s with %s rows", name, len(rows))
 
-        logging.info("Created %s: train=%s rows, test=%s rows", name, len(train_rows), len(test_rows))
+    return train_dir, test_dir
 
 
 if __name__ == "__main__":
