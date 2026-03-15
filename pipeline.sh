@@ -1,26 +1,22 @@
 #!/bin/bash
+set -euo pipefail
 
-DIR="./logs"
+LOG_DIR="./logs"
+DATA_DIR="./data"
 
-if [ -d "$DIR" ]; then
-    echo "Directory $DIR exists."
-else
-    echo "Directory $DIR does not exist. Creating..."
-    mkdir $DIR
-fi
+mkdir -p "$LOG_DIR"
 
-echo "Logs will be saved to $DIR"
+echo "Logs will be saved to $LOG_DIR"
+echo "Running data creation..."
+python data_creation.py --save_dir "$DATA_DIR"
 
-echo "Run data_creation.py"
-python data_creation.py --save_dir data 
+echo "Running preprocessing..."
+python model_preprocessing.py --data_dir "$DATA_DIR" --standard_scaler_path "$DATA_DIR/scaler.joblib"
 
-echo "Run model_preprocessing.py"
-python model_preprocessing.py --data_dir data --standard_scaler_path data/scaler.joblib
+echo "Running model training..."
+python model_preparation.py --train_data_path "$DATA_DIR/train_preprocessed" --model_save_path "$DATA_DIR/model.joblib"
 
+echo "Running model testing..."
+python model_testing.py --test_data_path "$DATA_DIR/test_preprocessed" --model_save_path "$DATA_DIR/model.joblib"
 
-echo "Run model_preparation.py"
-python model_preparation.py --train_data_path data/train/data.csv --model_save_path data/model.joblib
-
-
-echo "Run model_testing.py"
-python model_testing.py --test_data_path data/test/data.csv --model_save_path data/model.joblib
+echo "Pipeline finished successfully"
